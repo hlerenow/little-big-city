@@ -185,7 +185,11 @@ const vectorElements: VectorElementConfig[] = [{
     type: 'buildings',
     geometryType: 'polygon',
     depth: (feature: any) => {
-        return (feature.properties.height || 30) / 10 + 1;
+        // Enhanced height calculation for more dramatic height differences
+        // Original: height / 10 + 1
+        // New: Multiply by 2 for more dramatic effect, add minimum height of 2
+        const height = feature.properties.height || 30;
+        return (height / 5) + 2;  // Doubled effect + higher minimum
     }
 }, {
     type: 'roads',
@@ -375,7 +379,7 @@ const app: any = appInstance = createThreeApp('#viewport', {
             const material = app.createMaterial({
                 map: this._diffuseTex,
                 color: config[el.type + 'Color'],
-                roughness: 1,
+                roughness: 0.7,  // Reduced from 1 for more light reflection
                 metalness: 0
             });
             if (this._diffuseTex) {
@@ -387,8 +391,8 @@ const app: any = appInstance = createThreeApp('#viewport', {
             this._elementsMaterials[el.type] = material;
         });
 
-        // Create directional light with increased intensity for planet mode
-        const lightIntensity = IS_TILE_STYLE ? 1 : 2;
+        // Create directional light with significantly increased intensity for vibrant colors
+        const lightIntensity = IS_TILE_STYLE ? 2 : 3;  // Increased for brighter scene
         const light = app.createDirectionalLight([-1, -1, -1], '#fff', lightIntensity);
         light.shadow.mapSize.width = 2048;
         light.shadow.mapSize.height = 2048;
@@ -421,8 +425,8 @@ const app: any = appInstance = createThreeApp('#viewport', {
         );
         this._skybox = { visible: true, texture: gradientTexture };
 
-        // Add stronger ambient light for planet mode
-        const ambientIntensity = IS_TILE_STYLE ? 0.8 : 1.5;
+        // Add stronger ambient light for vibrant colors
+        const ambientIntensity = IS_TILE_STYLE ? 1.5 : 2.5;  // Significantly increased
         app.createAmbientLight(0xffffff, ambientIntensity);
 
         // Set gradient as environment for material reflections (optional)
