@@ -29,10 +29,7 @@ declare module 'jszip' {
     }
 }
 
-declare module 'geometry-extrude' {
-    export function extrudeGeoJSON(geojson: any, options?: any): any;
-    export function extrudePolygon(polygons: any, options?: any): any;
-}
+// geometry-extrude types are now handled by extrude-adapter.ts
 
 declare module 'claygl-advanced-renderer' {
     export default class ClayAdvancedRenderer {

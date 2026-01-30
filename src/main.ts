@@ -1,23 +1,17 @@
 /* global mapboxgl */
 import './styles/main.css';
-import { extrudeGeoJSON, extrudePolygon } from 'geometry-extrude';
-import {
-    application,
-    plugin,
-    geometry as builtinGeometries,
-    Geometry,
-    Vector3
-} from 'claygl';
+import { extrudeGeoJSON, extrudePolygon } from './extrude-adapter';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { createThreeApp } from './three-app';
 import { VectorTile } from '@mapbox/vector-tile';
 import Protobuf from 'pbf';
 import * as dat from 'dat.gui';
-import ClayAdvancedRenderer from 'claygl-advanced-renderer';
 import { LRUCache } from 'lru-cache';
 import quickhull from 'quickhull3d';
 import toOBJ from './toOBJ';
 import JSZip from 'jszip';
-import tessellate from './tessellate';
-import vec2 from 'claygl/src/glmatrix/vec2';
+// import tessellate from './tessellate'; // Temporarily disabled - needs Vector3 API migration
 import PolyBool from 'polybooljs';
 import distortion from './distortion';
 import * as maptalks from 'maptalks';
@@ -127,9 +121,12 @@ try {
 }
 catch (e) {}
 
+// Need to define appInstance first before creating actions
+let appInstance: any = null;
+
 const actions = {
     downloadOBJ: (() => {
-        let downloading = false;
+        let downloading = true;
         return () => {
             if (downloading) {
                 return;
@@ -142,10 +139,10 @@ const actions = {
             zip.file('city.mtl', mtl);
             zip.generateAsync({type: 'blob', compression: 'DEFLATE' })
                 .then((content: Blob) => {
-                    downloading = false;
+                    downloading = true;
                     saveAs(content, 'city.zip');
                 }).catch((e: any) => {
-                    downloading = false;
+                    downloading = true;
                     console.error(e.toString());
                 });
             // Behind all processing in case some errror happens.
@@ -221,16 +218,19 @@ function iterateFeatureCoordinates(feature: any, cb: (coords: any) => any): void
 
 function subdivideLongEdges(features: any[], maxDist: number): void {
 
-    const v: any[] = [];
     function addPoints(points: any[]): any[] {
         const newPoints: any[] = [];
         for (let i = 0; i < points.length - 1; i++) {
-            vec2.sub(v, points[i + 1], points[i]);
-            const dist = vec2.len(v);
-            vec2.scale(v, v, 1 / dist);
+            const p1 = new THREE.Vector2(points[i][0], points[i][1]);
+            const p2 = new THREE.Vector2(points[i + 1][0], points[i + 1][1]);
+            const v = p2.clone().sub(p1);
+            const dist = v.length();
+            v.normalize();
+
             newPoints.push(points[i]);
             for (let d = maxDist; d < dist; d += maxDist) {
-                newPoints.push(vec2.scaleAndAdd([], points[i], v, d));
+                const newPoint = p1.clone().add(v.clone().multiplyScalar(d));
+                newPoints.push([newPoint.x, newPoint.y]);
             }
         }
         newPoints.push(points[points.length - 1]);
@@ -329,7 +329,7 @@ function getRectCoords(rect: Rect): number[][] {
     ];
 }
 
-const app: any = application.create('#viewport', {
+const app: any = appInstance = createThreeApp('#viewport', {
 
     autoRender: false,
 
@@ -337,42 +337,23 @@ const app: any = application.create('#viewport', {
 
     init(app: any) {
 
-        this._advRenderer = new ClayAdvancedRenderer(app.renderer, app.scene, app.timeline, {
-            shadow: true,
-            temporalSuperSampling: {
-                enable: true,
-                dynamic: false
-            },
-            postEffect: {
-                enable: true,
-                bloom: {
-                    enable: false
-                },
-                screenSpaceAmbientOcclusion: {
-                    enable: true,
-                    intensity: 1.1,
-                    radius: 5
-                },
-                FXAA: {
-                    enable: false
-                }
-            }
-        });
-        this._advRenderer.setShadow({
-            kernelSize: 10,
-            blurSize: 3
-        });
+        // Three.js renderer setup
+        app.renderer.shadowMap.enabled = true;
+        app.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        app.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        app.renderer.toneMappingExposure = 1.0;
 
         const camera = app.createCamera([0, 0, 170], [0, 0, 0], IS_TILE_STYLE ? 'ortho' : 'perspective');
         if (IS_TILE_STYLE) {
-            camera.top = 50;
-            camera.bottom = -50;
-            camera.left = -50 * app.renderer.getViewportAspect();
-            camera.right = 50 * app.renderer.getViewportAspect();
-            camera.near = 0;
-            camera.far = 1000;
+            const aspect = app.renderer.domElement.width / app.renderer.domElement.height;
+            (camera as THREE.OrthographicCamera).top = 50;
+            (camera as THREE.OrthographicCamera).bottom = -50;
+            (camera as THREE.OrthographicCamera).left = -50 * aspect;
+            (camera as THREE.OrthographicCamera).right = 50 * aspect;
+            (camera as THREE.OrthographicCamera).near = 0;
+            (camera as THREE.OrthographicCamera).far = 1000;
+            camera.updateProjectionMatrix();
         }
-        camera.update();
         this._camera = camera;
 
         this._earthNode = app.createNode();
@@ -382,134 +363,200 @@ const app: any = application.create('#viewport', {
         this._elementsMaterials = {};
 
         this._diffuseTex = app.loadTextureSync('/assets/paper-detail.png', {
-            anisotropic: 8
+            anisotropy: 8,
+            repeat: [10, 10]
         });
 
         vectorElements.forEach(el => {
             this._elementsNodes[el.type] = app.createNode();
             if (IS_TILE_STYLE) {
-                this._elementsNodes[el.type].rotation.rotateX(-Math.PI / 2);
+                this._elementsNodes[el.type].rotation.x = -Math.PI / 2;
             }
-            this._elementsMaterials[el.type] = app.createMaterial({
-                diffuseMap: this._diffuseTex,
-                uvRepeat: [10, 10],
+            const material = app.createMaterial({
+                map: this._diffuseTex,
                 color: config[el.type + 'Color'],
-                roughness: 1
+                roughness: 1,
+                metalness: 0
             });
-            this._elementsMaterials[el.type].name = 'mat_' + el.type;
+            if (this._diffuseTex) {
+                this._diffuseTex.wrapS = THREE.RepeatWrapping;
+                this._diffuseTex.wrapT = THREE.RepeatWrapping;
+                this._diffuseTex.repeat.set(10, 10);
+            }
+            material.name = 'mat_' + el.type;
+            this._elementsMaterials[el.type] = material;
         });
 
-        const light = app.createDirectionalLight([-1, -1, -1], '#fff');
-        light.shadowResolution = 2048;
-        light.shadowBias = IS_TILE_STYLE ? 0.01 : 0.0005;
+        // Create directional light with increased intensity for planet mode
+        const lightIntensity = IS_TILE_STYLE ? 1 : 2;
+        const light = app.createDirectionalLight([-1, -1, -1], '#fff', lightIntensity);
+        light.shadow.mapSize.width = 2048;
+        light.shadow.mapSize.height = 2048;
+        light.shadow.bias = IS_TILE_STYLE ? 0.01 : 0.0005;
+        light.castShadow = true;
 
-        this._control = new plugin.OrbitControl({
-            target: camera,
-            domElement: app.container,
-            timeline: app.timeline,
-            rotateSensitivity: 2,
-            orthographicAspect: app.renderer.getViewportAspect()
-        });
-        if (IS_TILE_STYLE) {
-            this._control.setOption({
-                beta: 45,
-                alpha: 30,
-                minAlpha: 10,
-                maxAlpha: 80
-            });
-        }
-        this._control.on('update', () => {
-            this._advRenderer.render();
+        this._control = new OrbitControls(camera, app.renderer.domElement);
+        this._control.enableDamping = true;
+        this._control.dampingFactor = 0.05;
+        this._control.addEventListener('change', () => {
+            app.render();
         });
 
         if (!IS_TILE_STYLE) {
-            app.methods.updateEarthSphere();
+            app.methods.updateEarthSphere.call(this, app);
+        } else {
+            // Initialize ground for tile mode
+            app.methods.updateEarthGround.call(this, app, null);
         }
-        app.methods.updateElements();
-        app.methods.updateVisibility();
-        app.methods.generateClouds();
+        app.methods.updateElements.call(this, app);
+        app.methods.updateVisibility.call(this, app);
+        app.methods.generateClouds.call(this, app);
 
-        this._advRenderer.render();
+        app.render();
 
+        // Create sky blue gradient background (from light sky blue to deeper sky blue)
+        const gradientTexture = app.createGradientTexture(
+            ['#87CEEB', '#4A9FD8'],  // Light sky blue to deeper sky blue
+            'vertical'
+        );
+        this._skybox = { visible: true, texture: gradientTexture };
 
-        return app.createAmbientCubemapLight('/assets/Grand_Canyon_C.hdr', 0.2, 0.8, 1).then(result => {
-            const skybox = new plugin.Skybox({
-                environmentMap: result.specular.cubemap,
-                scene: app.scene
-            });
-            skybox.material.set('lod', 2);
-            this._skybox = skybox;
-            this._advRenderer.render();
-        });
+        // Add stronger ambient light for planet mode
+        const ambientIntensity = IS_TILE_STYLE ? 0.8 : 1.5;
+        app.createAmbientLight(0xffffff, ambientIntensity);
+
+        // Set gradient as environment for material reflections (optional)
+        if (!IS_TILE_STYLE) {
+            app.scene.environment = gradientTexture;
+        }
+
+        // Apply sky visibility based on config.sky
+        app.methods.updateSky.call(this, app);
     },
 
     loop(app: any) {
-        // Loop method required by claygl 1.3.0+
-        // Rendering is handled by advRenderer on demand
+        // Three.js handles rendering differently
+        if (app._control) {
+            app._control.update();
+        }
     },
 
     methods: {
         updateEarthSphere(app) {
-            this._earthNode.removeAll();
+            if (!this._earthNode) {
+                console.warn('updateEarthSphere: _earthNode not initialized');
+                return;
+            }
+
+            // Remove all children
+            while (this._earthNode.children.length > 0) {
+                const child = this._earthNode.children[0];
+                this._earthNode.remove(child);
+                if (child instanceof THREE.Mesh) {
+                    child.geometry.dispose();
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            }
 
             const earthMat = app.createMaterial({
                 roughness: 1,
                 color: config.earthColor,
-                diffuseMap: this._diffuseTex,
-                uvRepeat: [2, 2]
+                map: this._diffuseTex
             });
+            if (this._diffuseTex) {
+                this._diffuseTex.wrapS = THREE.RepeatWrapping;
+                this._diffuseTex.wrapT = THREE.RepeatWrapping;
+                this._diffuseTex.repeat.set(2, 2);
+            }
             earthMat.name = 'mat_earth';
 
             faces.forEach(face => {
-                const planeGeo = new builtinGeometries.Plane({
-                    widthSegments: 20,
-                    heightSegments: 20
-                });
-                app.createMesh(planeGeo, earthMat, this._earthNode);
+                const planeGeo = new THREE.PlaneGeometry(2, 2, 20, 20);
+                const mesh = app.createMesh(planeGeo, earthMat, this._earthNode);
+
+                // Apply distortion
+                const positions = planeGeo.attributes.position.array as Float32Array;
                 distortion(
-                    planeGeo.attributes.position.value,
+                    positions,
                     {x: -1, y: -1, width: 2, height: 2},
                     config.radius,
                     config.curveness,
                     face
                 );
-                planeGeo.generateVertexNormals();
+                planeGeo.attributes.position.needsUpdate = true;
+                planeGeo.computeVertexNormals();
             });
 
-            this._cloudsNode.eachChild(cloudMesh => {
-                const dist = cloudMesh.height + config.radius / Math.sqrt(2);
-                cloudMesh.position.normalize().scale(dist);
-            });
+            if (this._cloudsNode && this._cloudsNode.children) {
+                this._cloudsNode.children.forEach((cloudMesh: any) => {
+                    if (cloudMesh.height !== undefined) {
+                        const dist = cloudMesh.height + config.radius / Math.sqrt(2);
+                        cloudMesh.position.normalize().multiplyScalar(dist);
+                    }
+                });
+            }
 
-            this._advRenderer.render();
+            app.render();
         },
 
         updateEarthGround(app, rect) {
-            this._earthNode.removeAll();
+            if (!this._earthNode) {
+                console.warn('updateEarthGround: _earthNode not initialized');
+                return;
+            }
+
+            // Remove all children
+            while (this._earthNode.children.length > 0) {
+                const child = this._earthNode.children[0];
+                this._earthNode.remove(child);
+                if (child instanceof THREE.Mesh) {
+                    child.geometry.dispose();
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            }
 
             const {position, uv, normal, indices} = extrudePolygon(
-                [[getRectCoords(earthRect)]], {
+                [[getRectCoords(rect || earthRect)]], {
                     depth: config.earthDepth
-                    // bevelSize: 0.3
                 }
             );
-            const geo = new Geometry();
-            geo.attributes.position.value = position;
-            geo.attributes.normal.value = normal;
-            geo.attributes.texcoord0.value = uv;
-            geo.indices = indices;
-            geo.updateBoundingBox();
-            const mesh = app.createMesh(geo, {
-                nmae: 'mat_earth',
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(position, 3));
+            geo.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+            geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+            geo.setIndex(new THREE.BufferAttribute(indices, 1));
+            geo.computeBoundingSphere();
+
+            const earthMat = app.createMaterial({
                 roughness: 1,
                 color: config.earthColor,
-                diffuseMap: this._diffuseTex,
-                uvRepeat: [2, 2]
-            }, this._earthNode);
-            mesh.rotation.rotateX(-Math.PI / 2);
+                map: this._diffuseTex
+            });
+            // Enable double-sided rendering for tile mode ground
+            earthMat.side = THREE.DoubleSide;
+            if (this._diffuseTex) {
+                this._diffuseTex.wrapS = THREE.RepeatWrapping;
+                this._diffuseTex.wrapT = THREE.RepeatWrapping;
+                this._diffuseTex.repeat.set(2, 2);
+            }
+            earthMat.name = 'mat_earth';
+
+            const mesh = app.createMesh(geo, earthMat, this._earthNode);
+            mesh.rotation.x = -Math.PI / 2;
             mesh.position.y = -config.earthDepth + 0.1;
 
-            app.methods.render();
+            if (app && app.methods && app.methods.render) {
+                app.methods.render.call(this, app);
+            }
         },
 
         updateElements(app) {
@@ -518,15 +565,83 @@ const app: any = application.create('#viewport', {
             const elementsNodes = this._elementsNodes;
             const elementsMaterials = this._elementsMaterials;
             for (let key in elementsNodes) {
-                elementsNodes[key].removeAll();
+                // Remove all children from the node
+                while (elementsNodes[key].children.length > 0) {
+                    const child = elementsNodes[key].children[0];
+                    elementsNodes[key].remove(child);
+                    if (child instanceof THREE.Mesh) {
+                        child.geometry.dispose();
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach((m: THREE.Material) => m.dispose());
+                        } else {
+                            child.material.dispose();
+                        }
+                    }
+                }
             }
 
             for (let key in this._buildingAnimators) {
-                this._buildingAnimators[key].stop();
+                // Cancel animation frame instead of calling stop()
+                const animId = this._buildingAnimators[key];
+                if (typeof animId === 'number') {
+                    cancelAnimationFrame(animId);
+                }
             }
             const buildingAnimators = this._buildingAnimators = {};
+            
+            // Collect geometry data from all tiles before merging
+            const geometryDataCollector = {
+                buildings: [],
+                roads: [],
+                water: []
+            };
 
             function createElementMesh(elConfig, features, boundingRect, idx) {
+
+                // 打印建筑物原始信息
+                if (elConfig.type === 'buildings') {
+                    console.log('=== 建筑物原始信息 ===');
+                    console.log('瓦片索引:', idx);
+                    console.log('建筑物数量:', features.length);
+                    console.log('\n前 3 个建筑物的完整数据:');
+                    features.slice(0, 3).forEach((feature, i) => {
+                        console.log(`\n--- 建筑物 ${i + 1} ---`);
+                        console.log('GeoJSON 类型:', feature.type);
+                        console.log('几何类型:', feature.geometry?.type);
+                        console.log('属性 (properties):', feature.properties);
+                        console.log('坐标数组长度:', 
+                            feature.geometry?.type === 'Polygon' 
+                                ? feature.geometry.coordinates[0]?.length 
+                                : feature.geometry?.coordinates?.length
+                        );
+                        if (feature.geometry?.coordinates) {
+                            console.log('前 3 个坐标点:', 
+                                feature.geometry.type === 'Polygon'
+                                    ? feature.geometry.coordinates[0]?.slice(0, 3)
+                                    : feature.geometry.coordinates.slice(0, 3)
+                            );
+                        }
+                        
+                        // 计算挤压深度
+                        const height = feature.properties?.height || 30;
+                        const depth = typeof elConfig.depth === 'function' 
+                            ? elConfig.depth(feature) 
+                            : elConfig.depth;
+                        console.log('高度:', height, 'm');
+                        console.log('挤压深度:', depth.toFixed(2), '单位');
+                    });
+                    
+                    if (features.length > 3) {
+                        console.log(`\n... 还有 ${features.length - 3} 个建筑物`);
+                    }
+                    
+                    // 统计信息
+                    console.log('\n统计信息:');
+                    const heights = features.map(f => f.properties?.height || 30);
+                    console.log('最小高度:', Math.min(...heights), 'm');
+                    console.log('最大高度:', Math.max(...heights), 'm');
+                    console.log('平均高度:', (heights.reduce((a, b) => a + b, 0) / heights.length).toFixed(2), 'm');
+                }
 
                 if (!IS_TILE_STYLE && elConfig.type === 'roads' || elConfig.type === 'water') {
                     subdivideLongEdges(features, 4);
@@ -538,14 +653,29 @@ const app: any = application.create('#viewport', {
                     depth: elConfig.depth
                 });
                 const poly = result[elConfig.geometryType];
-                const geo = new Geometry();
-                if (!IS_TILE_STYLE && elConfig.type === 'water') {
-                    const {indices, position} = tessellate(poly.position, poly.indices, 5);
-                    poly.indices = indices;
-                    poly.position = position;
+                
+                // 打印几何体信息
+                if (elConfig.type === 'buildings') {
+                    console.log('几何体信息:');
+                    console.log('  顶点数:', poly.position.length / 3);
+                    console.log('  三角形数:', poly.indices.length / 3);
+                    console.log('  索引类型:', poly.indices.constructor.name);
+                    console.log('==================\n');
                 }
-                geo.attributes.texcoord0.value = poly.uv;
-                geo.indices = poly.indices;
+
+                // Temporarily disable tessellation for water (requires claygl Vector3 API migration)
+                // if (!IS_TILE_STYLE && elConfig.type === 'water') {
+                //     const {indices, position} = tessellate(poly.position, poly.indices, 5);
+                //     poly.indices = indices;
+                //     poly.position = position;
+                // }
+
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.BufferAttribute(poly.position, 3));
+                geo.setAttribute('normal', new THREE.BufferAttribute(poly.normal, 3));
+                geo.setAttribute('uv', new THREE.BufferAttribute(poly.uv, 2));
+                geo.setIndex(new THREE.BufferAttribute(poly.indices, 1));
+
                 const mesh = app.createMesh(geo, elementsMaterials[elConfig.type], elementsNodes[elConfig.type]);
                 if (elConfig.type === 'buildings') {
                     let positionAnimateFrom = new Float32Array(poly.position);
@@ -565,46 +695,59 @@ const app: any = application.create('#viewport', {
                             positionAnimateFrom, boundingRect, config.radius, config.curveness, faces[idx]
                         ) as Float32Array;
                     }
-                    geo.attributes.position.value = positionAnimateTo as any;
-                    geo.generateVertexNormals();
-                    geo.updateBoundingBox();
+                    // Will be set below after transition position is initialized
+                    geo.computeVertexNormals();
+                    geo.computeBoundingBox();
 
                     const transitionPosition = new Float32Array(positionAnimateFrom);
-                    geo.attributes.position.value = transitionPosition;
+                    geo.setAttribute('position', new THREE.BufferAttribute(transitionPosition, 3));
 
-                    mesh.invisible = true;
-                    const obj = {
-                        p: 0
-                    };
-                    buildingAnimators[faces[idx]] = app.timeline.animate(obj)
-                        .when(2000, {
-                            p: 1
-                        })
-                        .delay(1000)
-                        .during((obj, p) => {
-                            mesh.invisible = false;
+                    mesh.visible = true;
+
+                    // Simple animation replacement (claygl timeline -> setTimeout)
+                    // TODO: Use a proper animation library like GSAP or anime.js
+                    setTimeout(() => {
+                        const duration = 2000;
+                        const startTime = Date.now();
+
+                        const animate = () => {
+                            const elapsed = Date.now() - startTime;
+                            const progress = Math.min(elapsed / duration, 1);
+
+                            // Elastic out easing approximation
+                            const p = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress) * Math.sin((progress * 10 - 0.75) * (2 * Math.PI) / 3);
+
+                            mesh.visible = true;
                             for (let i = 0; i < transitionPosition.length; i++) {
                                 const a = positionAnimateFrom[i];
                                 const b = positionAnimateTo[i];
                                 transitionPosition[i] = (b - a) * p + a;
                             }
-                            geo.dirty();
-                            advRenderer.render();
-                        })
-                        .start('elasticOut');
+                            geo.attributes.position.needsUpdate = true;
+                            app.render();
+
+                            if (progress < 1) {
+                                buildingAnimators[faces[idx]] = requestAnimationFrame(animate);
+                            }
+                        };
+
+                        animate();
+                    }, 1000);
                 }
                 else {
+                    let finalPosition: Float32Array;
                     if (IS_TILE_STYLE) {
-                        geo.attributes.position.value = poly.position;
+                        finalPosition = poly.position;
                     }
                     else {
-                        geo.attributes.position.value = distortion(
+                        finalPosition = distortion(
                             poly.position, boundingRect,
                             config.radius, config.curveness, faces[idx]
-                        );
+                        ) as Float32Array;
                     }
-                    geo.generateVertexNormals();
-                    geo.updateBoundingBox();
+                    geo.setAttribute('position', new THREE.BufferAttribute(finalPosition, 3));
+                    geo.computeVertexNormals();
+                    geo.computeBoundingBox();
                 }
 
                 return {boundingRect: poly.boundingRect};
@@ -612,14 +755,10 @@ const app: any = application.create('#viewport', {
 
             let tiles = mainLayer.getTiles().tileGrids[0].tiles;
             const subdomains = ['a', 'b', 'c'];
-            if (IS_TILE_STYLE) {
-                const center = map.getCenter();
-                tiles = tiles.filter(tile => {
-                    const extent = tile.extent2d.convertTo(c => map.pointToCoord(c)).toJSON();
-                    return extent.xmax > center.x && extent.xmin < center.x
-                        && extent.ymax > center.y && extent.ymin < center.y;
-                });
-            }
+            // Remove the overly strict tile filter for tile mode
+            // This was causing tile mode to only load 1 tile (containing center point)
+            // while planet mode loads up to 6 tiles
+            // Now both modes load the same tiles for consistency
             let loading = Math.min(tiles.length, 6);
             tiles.forEach((tile, idx) => {
                 const fetchId = this._id;
@@ -725,19 +864,39 @@ const app: any = application.create('#viewport', {
                         loading--;
                         if (IS_TILE_STYLE) {
                             if (loading === 0) {
-                                app.methods.updateEarthGround(allBoundingRect);
+                                app.methods.updateEarthGround.call(this, app, allBoundingRect);
                             }
                         }
 
-                        app.methods.render();
+                        if (app && app.methods && app.methods.render) {
+                            app.methods.render.call(this, app);
+                        }
                     });
             });
         },
 
         generateClouds(app) {
+            if (!this._cloudsNode) {
+                console.warn('generateClouds: _cloudsNode not initialized');
+                return;
+            }
+            
             const cloudNumber = IS_TILE_STYLE ? 10 : 15;
             const pointCount = 100;
-            this._cloudsNode.removeAll();
+
+            // Remove all children from clouds node
+            while (this._cloudsNode.children.length > 0) {
+                const child = this._cloudsNode.children[0];
+                this._cloudsNode.remove(child);
+                if (child instanceof THREE.Mesh) {
+                    child.geometry.dispose();
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach((m: THREE.Material) => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            }
 
             const cloudMaterial = app.createMaterial({
                 roughness: 1,
@@ -794,50 +953,65 @@ const app: any = application.create('#viewport', {
                     }
                 }
 
-                const geo = new Geometry();
-                geo.attributes.position.value = positionArr;
-                geo.initIndicesFromArray(indices);
-                geo.generateFaceNormals();
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.BufferAttribute(positionArr, 3));
+                geo.setIndex(indices);
+                geo.computeVertexNormals();
 
                 const cloudMesh = app.createMesh(geo, cloudMaterial, this._cloudsNode);
-                cloudMesh.height = Math.random() * 10 + 20;
+                (cloudMesh as any).height = Math.random() * 10 + 20;
                 if (IS_TILE_STYLE) {
-                    cloudMesh.position.setArray([
+                    cloudMesh.position.set(
                         (Math.random() - 0.5) * 60,
                         Math.random() * 10 + 25,
                         (Math.random() - 0.5) * 60
-                    ]);
+                    );
                     if (IS_TILE_STYLE) {
                         cloudMesh.scale.set(0.6, 0.6, 0.6);
                     }
                 }
                 else {
-                    cloudMesh.position.setArray(randomInSphere(config.radius / Math.sqrt(2) + cloudMesh.height));
-                    cloudMesh.lookAt(Vector3.ZERO);
+                    const pos = randomInSphere(config.radius / Math.sqrt(2) + (cloudMesh as any).height);
+                    cloudMesh.position.set(pos[0], pos[1], pos[2]);
+                    cloudMesh.lookAt(0, 0, 0);
                 }
             }
-            app.methods.render();
+            if (app && app.methods && app.methods.render) {
+                app.methods.render.call(this, app);
+            }
         },
 
         updateColor() {
-            this._earthNode.eachChild(mesh => {
-                mesh.material.set('color', config.earthColor);
+            this._earthNode.children.forEach((mesh: any) => {
+                if (mesh.material && mesh.material.color) {
+                    mesh.material.color.set(config.earthColor);
+                }
             });
-            this._cloudsNode.eachChild(mesh => {
-                mesh.material.set('color', config.cloudColor);
+            this._cloudsNode.children.forEach((mesh: any) => {
+                if (mesh.material && mesh.material.color) {
+                    mesh.material.color.set(config.cloudColor);
+                }
             });
             for (let key in this._elementsMaterials) {
-                this._elementsMaterials[key].set('color', config[key + 'Color']);
+                const material = this._elementsMaterials[key];
+                if (material && material.color) {
+                    material.color.set(config[key + 'Color']);
+                }
             }
-            this._advRenderer.render();
+            app.render();
         },
 
         render(app) {
-            this._control.orthographicAspect = app.renderer.getViewportAspect();
-            this._advRenderer.render();
+            // Update orthographic camera aspect if needed
+            if (this._camera && this._camera instanceof THREE.OrthographicCamera) {
+                const aspect = app.renderer.domElement.width / app.renderer.domElement.height;
+                // OrbitControls doesn't have orthographicAspect in Three.js
+                // this._control.orthographicAspect = aspect;
+            }
+            app.render();
             // TODO
             setTimeout(() => {
-                this._advRenderer.render();
+                app.render();
             }, 20);
         },
 
@@ -847,28 +1021,54 @@ const app: any = application.create('#viewport', {
         },
 
         updateSky(app) {
-            config.sky ? this._skybox.attachScene(app.scene) : this._skybox.detachScene();
-            this._advRenderer.render();
+            // Control background visibility in Three.js
+            if (config.sky && this._skybox && this._skybox.texture) {
+                // Show gradient background
+                app.scene.background = this._skybox.texture;
+                // Set as environment for material reflections
+                if (!IS_TILE_STYLE) {
+                    app.scene.environment = this._skybox.texture;
+                }
+            } else {
+                // Hide background
+                app.scene.background = null;
+                // Keep environment for lighting even when background is hidden
+            }
+            app.render();
         },
 
         updateVisibility(app) {
-            this._earthNode.invisible = !config.showEarth;
-            this._cloudsNode.invisible = !config.showCloud;
+            if (this._earthNode) {
+                this._earthNode.visible = config.showEarth;
+            }
+            if (this._cloudsNode) {
+                this._cloudsNode.visible = config.showCloud;
+            }
 
-            this._elementsNodes.buildings.invisible = !config.showBuildings;
-            this._elementsNodes.roads.invisible = !config.showRoads;
-            this._elementsNodes.water.invisible = !config.showWater;
+            if (this._elementsNodes) {
+                if (this._elementsNodes.buildings) {
+                    this._elementsNodes.buildings.visible = config.showBuildings;
+                }
+                if (this._elementsNodes.roads) {
+                    this._elementsNodes.roads.visible = config.showRoads;
+                }
+                if (this._elementsNodes.water) {
+                    this._elementsNodes.water.visible = config.showWater;
+                }
+            }
 
-            app.methods.render();
+            if (app && app.methods && app.methods.render) {
+                app.methods.render.call(this, app);
+            }
         }
     }
 });
 
 function updateAll() {
-    if (!IS_TILE_STYLE) {
-        app.methods.updateEarthSphere();
-    }
-    app.methods.updateElements();
+if (!IS_TILE_STYLE) {
+    app.methods.updateEarthSphere.call(app, app);
+}
+app.methods.updateElements.call(app, app);
 }
 
 function updateUrlState() {
@@ -929,7 +1129,9 @@ ui.add(config, 'sky').onChange(app.methods.updateSky).onFinishChange(updateUrlSt
 const earthFolder = ui.addFolder('Earth');
 earthFolder.add(config, 'showEarth').onChange(app.methods.updateVisibility).onFinishChange(updateUrlState);
 if (IS_TILE_STYLE) {
-    earthFolder.add(config, 'earthDepth', 1, 50).onChange(app.methods.updateEarthGround).onFinishChange(updateUrlState);
+    earthFolder.add(config, 'earthDepth', 1, 50).onChange(() => {
+        app.methods.updateEarthGround.call(appInstance, appInstance, config.earthDepth);
+    }).onFinishChange(updateUrlState);
 }
 earthFolder.addColor(config, 'earthColor').onChange(app.methods.updateColor).onFinishChange(updateUrlState);
 
@@ -952,4 +1154,11 @@ cloudFolder.add(actions, 'randomCloud');
 
 ui.add(actions, 'downloadOBJ');
 
-window.addEventListener('resize', () => { app.resize(); app.methods.render(); });
+window.addEventListener('resize', () => { 
+    if (app) {
+        app.resize(); 
+        if (app.methods && app.methods.render) {
+            app.methods.render.call(app, app);
+        }
+    }
+});

@@ -12,20 +12,20 @@
   },
   "dependencies": {
     "@mapbox/vector-tile": "^2.0.4",
-    "claygl": "^1.3.0",
-    "claygl-advanced-renderer": "git+https://github.com/pissang/claygl-advanced-renderer.git",
     "dat.gui": "^0.7.9",
-    "geometry-extrude": "^0.1.3",
     "jszip": "^3.10.1",
     "lru-cache": "^11.2.5",
     "maptalks": "^1.11.0",
     "pbf": "^4.0.1",
+    "poly-extrude": "^0.22.2",
     "polybooljs": "^1.2.2",
-    "quickhull3d": "^3.1.2"
+    "quickhull3d": "^3.1.2",
+    "three": "^0.182.0"
   },
   "devDependencies": {
     "@types/dat.gui": "^0.7.13",
     "@types/node": "^22.19.7",
+    "@types/three": "^0.182.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.1"
   }

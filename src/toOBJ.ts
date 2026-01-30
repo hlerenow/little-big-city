@@ -1,4 +1,4 @@
-import { Vector3 } from 'claygl';
+import * as THREE from 'three';
 
 const CREDIT = '# https://github.com/pissang/little-big-city\n';
 
@@ -29,19 +29,18 @@ function phongFromRoughness(r?: number): number {
 
 function getMaterialParameters(material: any): Record<string, any> {
     const obj: Record<string, any> = {};
-    obj['Kd'] = (material.get('color') || [1, 1, 1]).slice(0, 3).join(' ');
+    const color = material.color || new THREE.Color(1, 1, 1);
+    obj['Kd'] = `${color.r} ${color.g} ${color.b}`;
     // TODO
     obj['Ks'] = [1, 1, 1].join(' ');
-    obj['Ns'] = phongFromRoughness(material.get('roughness'));
+    obj['Ns'] = phongFromRoughness(material.roughness);
 
     // Physically-based Rendering extension.
-    if (material.shader.name === 'ecgl.realistic') {
-        if (material.get('metalness') != null) {
-            obj['Pm'] = material.get('metalness');
-        }
-        if (material.get('roughness') != null) {
-            obj['Pr'] = material.get('roughness');
-        }
+    if (material.metalness != null) {
+        obj['Pm'] = material.metalness;
+    }
+    if (material.roughness != null) {
+        obj['Pr'] = material.roughness;
     }
     return obj;
 }
@@ -63,13 +62,13 @@ export default function exportGL2OBJ(scene: any, opts?: ExportOptions): ExportRe
     scene.traverse(function (mesh: any) {
         let parent = mesh;
         while (parent) {
-            if (parent.invisible) {
+            if ((parent as any).invisible || !parent.visible) {
                 return;
             }
-            parent = parent.getParent();
+            parent = parent.parent;
         }
 
-        if (mesh.isRenderable() && mesh.geometry.vertexCount) {
+        if (mesh instanceof THREE.Mesh && mesh.geometry) {
             let materialName = mesh.material.name;
             objStr += 'o ' + mesh.name + '\n';
 
@@ -83,48 +82,52 @@ export default function exportGL2OBJ(scene: any, opts?: ExportOptions): ExportRe
             let positionAttr = geometry.attributes.position;
             let colorAttr = geometry.attributes.color;
             let normalAttr = geometry.attributes.normal;
-            let texcoordAttr = geometry.attributes.texcoord0;
+            let texcoordAttr = geometry.attributes.uv;
 
-            mesh.updateWorldTransform();
-            const normalMat = mesh.worldTransform.clone().invert().transpose();
+            mesh.updateMatrixWorld(true);
+            const normalMat = new THREE.Matrix4().copy(mesh.matrixWorld).invert().transpose();
 
-            const pos = new Vector3();
-            const nor = new Vector3();
+            const pos = new THREE.Vector3();
+            const nor = new THREE.Vector3();
             const col: number[] = [];
             const uv: number[] = [];
 
-            const hasTexcoord = !!(texcoordAttr && texcoordAttr.value);
-            const hasNormal = !!(normalAttr && normalAttr.value);
-            const hasColor = !!(colorAttr && colorAttr.value);
+            const hasTexcoord = !!(texcoordAttr && texcoordAttr.array);
+            const hasNormal = !!(normalAttr && normalAttr.array);
+            const hasColor = !!(colorAttr && colorAttr.array);
 
             const tmp: number[] = [];
-            for (let i = 0; i < geometry.vertexCount; i++) {
-                positionAttr.get(i, pos.array);
+            const vertexCount = positionAttr.count;
+            for (let i = 0; i < vertexCount; i++) {
+                pos.fromArray(positionAttr.array as Float32Array, i * 3);
 
-                Vector3.transformMat4(pos, pos, mesh.worldTransform);
+                pos.applyMatrix4(mesh.matrixWorld);
 
                 // PENDING
-                quantizeArr(tmp, pos.array as number[], 1e5);
+                quantizeArr(tmp, pos.toArray(), 1e5);
                 let vItem = 'v ' + tmp.join(' ');
                 if (hasColor && !opts.storeVertexColorInTexture) {
-                    colorAttr.get(i, col);
+                    col[0] = colorAttr.getX(i);
+                    col[1] = colorAttr.getY(i);
+                    col[2] = colorAttr.getZ(i);
                     quantizeArr(col, col, 1e3);
                     vItem += ' ' + col.join(' ');
                 }
                 vStr.push(vItem);
 
                 if (hasNormal) {
-                    normalAttr.get(i, nor.array);
-                    Vector3.transformMat4(nor, nor, normalMat);
-                    Vector3.normalize(nor, nor);
-                    quantizeArr(tmp, nor.array as number[], 1e3);
+                    nor.fromArray(normalAttr.array as Float32Array, i * 3);
+                    nor.applyMatrix4(normalMat);
+                    nor.normalize();
+                    quantizeArr(tmp, nor.toArray(), 1e3);
                     vnStr.push('vn ' + tmp.join(' '));
                 }
                 else {
                     vnStr.push('vn 0 0 0');
                 }
                 if (hasTexcoord) {
-                    texcoordAttr.get(i, uv);
+                    uv[0] = texcoordAttr.getX(i);
+                    uv[1] = texcoordAttr.getY(i);
                     quantizeArr(uv, uv, 1e5);
                     vtStr.push('vt ' + uv.join(' '));
                 }
@@ -134,24 +137,16 @@ export default function exportGL2OBJ(scene: any, opts?: ExportOptions): ExportRe
             }
 
             const fStr: string[] = [];
-            const indices: any[] = [];
-            for (let i = 0; i < geometry.triangleCount; i++) {
-                geometry.getTriangleIndices(i, indices);
-                // Start from 1
+            const index = geometry.index;
+            const triangleCount = index ? index.count / 3 : vertexCount / 3;
+            
+            for (let i = 0; i < triangleCount; i++) {
+                const indices: any[] = [];
                 for (let k = 0; k < 3; k++) {
-                    indices[k] += indexStart;
-                    var idx = indices[k];
-                    // if (hasTexcoord) {
-                        indices[k] += '/' + idx;
-                    // }
-                    // if (hasNormal) {
-                    //     if (!hasTexcoord) {
-                    //         indices[k] += '/';
-                    //     }
-                        indices[k] += '/' + idx;
-                    // }
+                    const vertexIndex = index ? index.getX(i * 3 + k) : i * 3 + k;
+                    const idx = vertexIndex + indexStart;
+                    indices[k] = idx + '/' + idx + '/' + idx;
                 }
-
                 fStr.push('f ' + indices.join(' '));
             }
 
@@ -161,7 +156,7 @@ export default function exportGL2OBJ(scene: any, opts?: ExportOptions): ExportRe
                 + 'usemtl ' + materialName + '\n'
                 + fStr.join('\n') + '\n';
 
-            indexStart += geometry.vertexCount;
+            indexStart += vertexCount;
         }
     });
 
