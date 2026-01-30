@@ -38,7 +38,7 @@ export function createUIController(
     const actions: UIActions = {
         downloadOBJ: createDownloadAction(app),
         randomCloud: () => {
-            app.methods.generateClouds();
+            app.methods.generateClouds(app);
         },
         reset: () => {
             Object.assign(config, DEFAULT_CONFIG);
@@ -55,38 +55,38 @@ export function createUIController(
     if (!isTileStyle) {
         ui.add(config, 'radius', 30, 100).step(1).onChange(updateAll).onFinishChange(updateUrlState);
     }
-    ui.add(config, 'rotateSpeed', -2, 2).step(0.01).onChange(app.methods.updateAutoRotate).onFinishChange(updateUrlState);
-    ui.add(config, 'sky').onChange(app.methods.updateSky).onFinishChange(updateUrlState);
+    ui.add(config, 'rotateSpeed', -2, 2).step(0.01).onChange(() => app.methods.updateAutoRotate(app)).onFinishChange(updateUrlState);
+    ui.add(config, 'sky').onChange(() => app.methods.updateSky(app)).onFinishChange(updateUrlState);
 
     // 地面控制
     const earthFolder = ui.addFolder('Earth');
-    earthFolder.add(config, 'showEarth').onChange(app.methods.updateVisibility).onFinishChange(updateUrlState);
+    earthFolder.add(config, 'showEarth').onChange(() => app.methods.updateVisibility(app)).onFinishChange(updateUrlState);
     if (isTileStyle) {
         earthFolder.add(config, 'earthDepth', 1, 50).onChange(() => {
             app.methods.updateEarthGround.call(app, app, config.earthDepth);
         }).onFinishChange(updateUrlState);
     }
-    earthFolder.addColor(config, 'earthColor').onChange(app.methods.updateColor).onFinishChange(updateUrlState);
+    earthFolder.addColor(config, 'earthColor').onChange(() => app.methods.updateColor(app)).onFinishChange(updateUrlState);
 
     // 建筑控制
     const buildingsFolder = ui.addFolder('Buildings');
-    buildingsFolder.add(config, 'showBuildings').onChange(app.methods.updateVisibility).onFinishChange(updateUrlState);
-    buildingsFolder.addColor(config, 'buildingsColor').onChange(app.methods.updateColor).onFinishChange(updateUrlState);
+    buildingsFolder.add(config, 'showBuildings').onChange(() => app.methods.updateVisibility(app)).onFinishChange(updateUrlState);
+    buildingsFolder.addColor(config, 'buildingsColor').onChange(() => app.methods.updateColor(app)).onFinishChange(updateUrlState);
 
     // 道路控制
     const roadsFolder = ui.addFolder('Roads');
-    roadsFolder.add(config, 'showRoads').onChange(app.methods.updateVisibility).onFinishChange(updateUrlState);
-    roadsFolder.addColor(config, 'roadsColor').onChange(app.methods.updateColor).onFinishChange(updateUrlState);
+    roadsFolder.add(config, 'showRoads').onChange(() => app.methods.updateVisibility(app)).onFinishChange(updateUrlState);
+    roadsFolder.addColor(config, 'roadsColor').onChange(() => app.methods.updateColor(app)).onFinishChange(updateUrlState);
 
     // 水体控制
     const waterFolder = ui.addFolder('Water');
-    waterFolder.add(config, 'showWater').onChange(app.methods.updateVisibility).onFinishChange(updateUrlState);
-    waterFolder.addColor(config, 'waterColor').onChange(app.methods.updateColor).onFinishChange(updateUrlState);
+    waterFolder.add(config, 'showWater').onChange(() => app.methods.updateVisibility(app)).onFinishChange(updateUrlState);
+    waterFolder.addColor(config, 'waterColor').onChange(() => app.methods.updateColor(app)).onFinishChange(updateUrlState);
 
     // 云朵控制
     const cloudFolder = ui.addFolder('Cloud');
-    cloudFolder.add(config, 'showCloud').onChange(app.methods.updateVisibility).onFinishChange(updateUrlState);
-    cloudFolder.addColor(config, 'cloudColor').onChange(app.methods.updateColor).onFinishChange(updateUrlState);
+    cloudFolder.add(config, 'showCloud').onChange(() => app.methods.updateVisibility(app)).onFinishChange(updateUrlState);
+    cloudFolder.addColor(config, 'cloudColor').onChange(() => app.methods.updateColor(app)).onFinishChange(updateUrlState);
     cloudFolder.add(actions, 'randomCloud');
 
     // 导出控制

@@ -144,18 +144,18 @@ const app: any = createThreeApp('#viewport', {
             (camera as THREE.OrthographicCamera).far = 1000;
             camera.updateProjectionMatrix();
         }
-        this._camera = camera;
+        app._camera = camera;
 
         // 创建场景节点
-        this._earthNode = app.createNode();  // 地面节点
-        this._cloudsNode = app.createNode(); // 云朵节点
+        app._earthNode = app.createNode();  // 地面节点
+        app._cloudsNode = app.createNode(); // 云朵节点
 
         // 初始化元素节点和材质存储
-        this._elementsNodes = {};      // 存储建筑、道路、水体的节点
-        this._elementsMaterials = {};  // 存储各元素的材质
+        app._elementsNodes = {};      // 存储建筑、道路、水体的节点
+        app._elementsMaterials = {};  // 存储各元素的材质
 
         // 加载纹理贴图
-        this._diffuseTex = app.loadTextureSync('/assets/paper-detail.png', {
+        app._diffuseTex = app.loadTextureSync('/assets/paper-detail.png', {
             anisotropy: 8,
             repeat: [10, 10]
         });
@@ -163,29 +163,29 @@ const app: any = createThreeApp('#viewport', {
         // 为每种矢量元素创建节点和材质
         vectorElements.forEach(el => {
             // 创建元素节点
-            this._elementsNodes[el.type] = app.createNode();
+            app._elementsNodes[el.type] = app.createNode();
             if (IS_TILE_STYLE) {
                 // 平铺模式下，旋转节点使其平放
-                this._elementsNodes[el.type].rotation.x = -Math.PI / 2;
+                app._elementsNodes[el.type].rotation.x = -Math.PI / 2;
             }
             
             // 创建材质
             const material = app.createMaterial({
-                map: this._diffuseTex,
+                map: app._diffuseTex,
                 color: config[el.type + 'Color'],
                 roughness: 0.7,  // 降低粗糙度以增加光照反射
                 metalness: 0
             });
             
             // 配置纹理重复
-            if (this._diffuseTex) {
-                this._diffuseTex.wrapS = THREE.RepeatWrapping;
-                this._diffuseTex.wrapT = THREE.RepeatWrapping;
-                this._diffuseTex.repeat.set(10, 10);
+            if (app._diffuseTex) {
+                app._diffuseTex.wrapS = THREE.RepeatWrapping;
+                app._diffuseTex.wrapT = THREE.RepeatWrapping;
+                app._diffuseTex.repeat.set(10, 10);
             }
             
             material.name = 'mat_' + el.type;
-            this._elementsMaterials[el.type] = material;
+            app._elementsMaterials[el.type] = material;
         });
 
         // 创建方向光（显著提高强度以获得鲜艳的颜色）
@@ -197,10 +197,10 @@ const app: any = createThreeApp('#viewport', {
         light.castShadow = true;
 
         // 创建轨道控制器
-        this._control = new OrbitControls(camera, app.renderer.domElement);
-        this._control.enableDamping = true;      // 启用阻尼（惯性）
-        this._control.dampingFactor = 0.05;      // 阻尼系数
-        this._control.addEventListener('change', () => {
+        app._control = new OrbitControls(camera, app.renderer.domElement);
+        app._control.enableDamping = true;      // 启用阻尼（惯性）
+        app._control.dampingFactor = 0.05;      // 阻尼系数
+        app._control.addEventListener('change', () => {
             app.render();  // 控制器变化时重新渲染
         });
 
@@ -225,7 +225,7 @@ const app: any = createThreeApp('#viewport', {
             ['#87CEEB', '#4A9FD8'],  // 从浅天空蓝到深天空蓝
             'vertical'
         );
-        this._skybox = { visible: true, texture: gradientTexture };
+        app._skybox = { visible: true, texture: gradientTexture };
 
         // 添加强环境光以获得鲜艳的颜色
         const ambientIntensity = IS_TILE_STYLE ? 1.5 : 2.5;
@@ -261,15 +261,15 @@ const app: any = createThreeApp('#viewport', {
          * 创建6个面的球形地面，应用变形算法
          */
         updateEarthSphere(app) {
-            if (!this._earthNode) {
+            if (!app._earthNode) {
                 console.warn('updateEarthSphere: _earthNode not initialized');
                 return;
             }
 
-            // Remove all children
-            while (this._earthNode.children.length > 0) {
-                const child = this._earthNode.children[0];
-                this._earthNode.remove(child);
+            // 清除所有子节点
+            while (app._earthNode.children.length > 0) {
+                const child = app._earthNode.children[0];
+                app._earthNode.remove(child);
                 if (child instanceof THREE.Mesh) {
                     child.geometry.dispose();
                     if (Array.isArray(child.material)) {
@@ -284,19 +284,19 @@ const app: any = createThreeApp('#viewport', {
             const earthMat = app.createMaterial({
                 roughness: 1,
                 color: config.earthColor,
-                map: this._diffuseTex
+                map: app._diffuseTex
             });
-            if (this._diffuseTex) {
-                this._diffuseTex.wrapS = THREE.RepeatWrapping;
-                this._diffuseTex.wrapT = THREE.RepeatWrapping;
-                this._diffuseTex.repeat.set(2, 2);
+            if (app._diffuseTex) {
+                app._diffuseTex.wrapS = THREE.RepeatWrapping;
+                app._diffuseTex.wrapT = THREE.RepeatWrapping;
+                app._diffuseTex.repeat.set(2, 2);
             }
             earthMat.name = 'mat_earth';
 
             // 为立方体的6个面创建平面
             cubefaces.forEach(face => {
                 const planeGeo = new THREE.PlaneGeometry(2, 2, 20, 20);
-                const mesh = app.createMesh(planeGeo, earthMat, this._earthNode);
+                const mesh = app.createMesh(planeGeo, earthMat, app._earthNode);
 
                 // 应用球面变形
                 const positions = planeGeo.attributes.position.array as Float32Array;
@@ -312,8 +312,8 @@ const app: any = createThreeApp('#viewport', {
             });
 
             // 更新云朵位置以匹配新的地面半径
-            if (this._cloudsNode && this._cloudsNode.children) {
-                this._cloudsNode.children.forEach((cloudMesh: any) => {
+            if (app._cloudsNode && app._cloudsNode.children) {
+                app._cloudsNode.children.forEach((cloudMesh: any) => {
                     if (cloudMesh.height !== undefined) {
                         const dist = cloudMesh.height + config.radius / Math.sqrt(2);
                         cloudMesh.position.normalize().multiplyScalar(dist);
@@ -328,15 +328,15 @@ const app: any = createThreeApp('#viewport', {
          * 更新平面地面（平铺模式）
          */
         updateEarthGround(app, rect) {
-            if (!this._earthNode) {
+            if (!app._earthNode) {
                 console.warn('updateEarthGround: _earthNode not initialized');
                 return;
             }
 
             // 清除所有子节点
-            while (this._earthNode.children.length > 0) {
-                const child = this._earthNode.children[0];
-                this._earthNode.remove(child);
+            while (app._earthNode.children.length > 0) {
+                const child = app._earthNode.children[0];
+                app._earthNode.remove(child);
                 if (child instanceof THREE.Mesh) {
                     child.geometry.dispose();
                     if (Array.isArray(child.material)) {
@@ -366,19 +366,19 @@ const app: any = createThreeApp('#viewport', {
             const earthMat = app.createMaterial({
                 roughness: 1,
                 color: config.earthColor,
-                map: this._diffuseTex
+                map: app._diffuseTex
             });
             // 启用双面渲染（平铺模式地面需要）
             earthMat.side = THREE.DoubleSide;
-            if (this._diffuseTex) {
-                this._diffuseTex.wrapS = THREE.RepeatWrapping;
-                this._diffuseTex.wrapT = THREE.RepeatWrapping;
-                this._diffuseTex.repeat.set(2, 2);
+            if (app._diffuseTex) {
+                app._diffuseTex.wrapS = THREE.RepeatWrapping;
+                app._diffuseTex.wrapT = THREE.RepeatWrapping;
+                app._diffuseTex.repeat.set(2, 2);
             }
             earthMat.name = 'mat_earth';
 
             // 创建地面网格并定位
-            const mesh = app.createMesh(geo, earthMat, this._earthNode);
+            const mesh = app.createMesh(geo, earthMat, app._earthNode);
             mesh.rotation.x = -Math.PI / 2;  // 旋转为水平
             mesh.position.y = -config.earthDepth + 0.1;  // 向下偏移
 
@@ -392,9 +392,9 @@ const app: any = createThreeApp('#viewport', {
          * 从瓦片数据加载并创建3D模型
          */
         updateElements(app) {
-            this._id = Math.random();  // 生成唯一ID，用于取消过期的请求
-            const elementsNodes = this._elementsNodes;
-            const elementsMaterials = this._elementsMaterials;
+            app._id = Math.random();  // 生成唯一ID，用于取消过期的请求
+            const elementsNodes = app._elementsNodes;
+            const elementsMaterials = app._elementsMaterials;
             
             // 清除所有元素节点的子对象
             for (let key in elementsNodes) {
@@ -414,13 +414,13 @@ const app: any = createThreeApp('#viewport', {
             }
 
             // 取消所有正在进行的建筑动画
-            for (let key in this._buildingAnimators) {
-                const animId = this._buildingAnimators[key];
+            for (let key in app._buildingAnimators) {
+                const animId = app._buildingAnimators[key];
                 if (typeof animId === 'number') {
                     cancelAnimationFrame(animId);
                 }
             }
-            const buildingAnimators = this._buildingAnimators = {};
+            const buildingAnimators = app._buildingAnimators = {};
             
             // Collect geometry data from all tiles before merging
             const geometryDataCollector = {
@@ -437,6 +437,10 @@ const app: any = createThreeApp('#viewport', {
              * @param idx 瓦片索引
              */
             function createElementMesh(elConfig, features, boundingRect, idx) {
+                // 检查配置是否存在（过滤掉未配置的要素类型）
+                if (!elConfig) {
+                    return null;
+                }
 
                 // 调试：打印建筑物原始信息
                 if (elConfig.type === 'buildings') {
@@ -496,6 +500,12 @@ const app: any = createThreeApp('#viewport', {
                     depth: elConfig.depth
                 });
                 const poly = result[elConfig.geometryType];
+                
+                // 检查是否成功生成几何体
+                if (!poly || !poly.position) {
+                    console.warn(`无法为 ${elConfig.type} 生成几何体`);
+                    return null;
+                }
                 
                 // 打印几何体信息
                 if (elConfig.type === 'buildings') {
@@ -615,7 +625,7 @@ const app: any = createThreeApp('#viewport', {
             // 最多加载6个瓦片（立方体6个面）
             let loading = Math.min(tiles.length, 6);
             tiles.forEach((tile, idx) => {
-                const fetchId = this._id;
+                const fetchId = app._id;
                 if (idx >= 6) {
                     return;  // 只处理前6个瓦片
                 }
@@ -655,11 +665,16 @@ const app: any = createThreeApp('#viewport', {
                 if (mvtCache.get(url)) {
                     const features = mvtCache.get(url);
                     for (let key in features) {
-                        createElementMesh(
-                            vectorElements.find(config => config.type === key),
-                            features[key],
-                            tileRect, idx
-                        );
+                        // 查找对应的配置
+                        const elConfig = vectorElements.find(config => config.type === key);
+                        // 只处理已配置的要素类型
+                        if (elConfig) {
+                            createElementMesh(
+                                elConfig,
+                                features[key],
+                                tileRect, idx
+                            );
+                        }
                     }
                     return;
                 }
@@ -670,7 +685,7 @@ const app: any = createThreeApp('#viewport', {
                 }).then(response => response.arrayBuffer())
                     .then(buffer => {
                         // 检查请求是否已过期
-                        if (fetchId !== this._id) {
+                        if (fetchId !== app._id) {
                             return;
                         }
 
@@ -730,12 +745,19 @@ const app: any = createThreeApp('#viewport', {
                         
                         // 为每种要素创建网格
                         for (let key in features) {
-                            const {boundingRect} = createElementMesh(
-                                vectorElements.find(config => config.type === key),
-                                features[key],
-                                tileRect, idx
-                            );
-                            unionRect(allBoundingRect, boundingRect, allBoundingRect);
+                            // 查找对应的配置
+                            const elConfig = vectorElements.find(config => config.type === key);
+                            // 只处理已配置的要素类型
+                            if (elConfig) {
+                                const result = createElementMesh(
+                                    elConfig,
+                                    features[key],
+                                    tileRect, idx
+                                );
+                                if (result && result.boundingRect) {
+                                    unionRect(allBoundingRect, result.boundingRect, allBoundingRect);
+                                }
+                            }
                         }
 
                         // 所有瓦片加载完成后更新地面
@@ -757,7 +779,7 @@ const app: any = createThreeApp('#viewport', {
          * 使用QuickHull算法创建3D云朵形状
          */
         generateClouds(app) {
-            if (!this._cloudsNode) {
+            if (!app._cloudsNode) {
                 console.warn('generateClouds: _cloudsNode not initialized');
                 return;
             }
@@ -767,9 +789,9 @@ const app: any = createThreeApp('#viewport', {
             const pointCount = 100;  // 每个云朵的点数
 
             // 清除现有云朵
-            while (this._cloudsNode.children.length > 0) {
-                const child = this._cloudsNode.children[0];
-                this._cloudsNode.remove(child);
+            while (app._cloudsNode.children.length > 0) {
+                const child = app._cloudsNode.children[0];
+                app._cloudsNode.remove(child);
                 if (child instanceof THREE.Mesh) {
                     child.geometry.dispose();
                     if (Array.isArray(child.material)) {
@@ -856,7 +878,7 @@ const app: any = createThreeApp('#viewport', {
                 geo.computeVertexNormals();
 
                 // 创建云朵网格
-                const cloudMesh = app.createMesh(geo, cloudMaterial, this._cloudsNode);
+                const cloudMesh = app.createMesh(geo, cloudMaterial, app._cloudsNode);
                 (cloudMesh as any).height = Math.random() * 10 + 20;
                 
                 if (IS_TILE_STYLE) {
@@ -885,24 +907,24 @@ const app: any = createThreeApp('#viewport', {
          * 更新颜色
          * 根据配置更新所有元素的颜色
          */
-        updateColor() {
+        updateColor(app) {
             // 更新地面颜色
-            this._earthNode.children.forEach((mesh: any) => {
+            app._earthNode.children.forEach((mesh: any) => {
                 if (mesh.material && mesh.material.color) {
                     mesh.material.color.set(config.earthColor);
                 }
             });
             
             // 更新云朵颜色
-            this._cloudsNode.children.forEach((mesh: any) => {
+            app._cloudsNode.children.forEach((mesh: any) => {
                 if (mesh.material && mesh.material.color) {
                     mesh.material.color.set(config.cloudColor);
                 }
             });
             
             // 更新元素颜色（建筑、道路、水体）
-            for (let key in this._elementsMaterials) {
-                const material = this._elementsMaterials[key];
+            for (let key in app._elementsMaterials) {
+                const material = app._elementsMaterials[key];
                 if (material && material.color) {
                     material.color.set(config[key + 'Color']);
                 }
@@ -915,7 +937,7 @@ const app: any = createThreeApp('#viewport', {
          */
         render(app) {
             // 更新正交相机宽高比（如果需要）
-            if (this._camera && this._camera instanceof THREE.OrthographicCamera) {
+            if (app._camera && app._camera instanceof THREE.OrthographicCamera) {
                 const aspect = app.renderer.domElement.width / app.renderer.domElement.height;
             }
             app.render();
@@ -928,9 +950,9 @@ const app: any = createThreeApp('#viewport', {
         /**
          * 更新自动旋转
          */
-        updateAutoRotate() {
-            this._control.rotateSpeed = config.rotateSpeed * 50;
-            this._control.autoRotate = Math.abs(config.rotateSpeed) > 0.3;
+        updateAutoRotate(app) {
+            app._control.rotateSpeed = config.rotateSpeed * 50;
+            app._control.autoRotate = Math.abs(config.rotateSpeed) > 0.3;
         },
 
         /**
@@ -938,12 +960,12 @@ const app: any = createThreeApp('#viewport', {
          */
         updateSky(app) {
             // 控制背景可见性
-            if (config.sky && this._skybox && this._skybox.texture) {
+            if (config.sky && app._skybox && app._skybox.texture) {
                 // 显示渐变背景
-                app.scene.background = this._skybox.texture;
+                app.scene.background = app._skybox.texture;
                 // 在星球模式下设置为环境贴图以提供反射
                 if (!IS_TILE_STYLE) {
-                    app.scene.environment = this._skybox.texture;
+                    app.scene.environment = app._skybox.texture;
                 }
             } else {
                 // 隐藏背景
@@ -957,25 +979,25 @@ const app: any = createThreeApp('#viewport', {
          */
         updateVisibility(app) {
             // 更新地面可见性
-            if (this._earthNode) {
-                this._earthNode.visible = config.showEarth;
+            if (app._earthNode) {
+                app._earthNode.visible = config.showEarth;
             }
             
             // 更新云朵可见性
-            if (this._cloudsNode) {
-                this._cloudsNode.visible = config.showCloud;
+            if (app._cloudsNode) {
+                app._cloudsNode.visible = config.showCloud;
             }
 
             // 更新各元素可见性
-            if (this._elementsNodes) {
-                if (this._elementsNodes.buildings) {
-                    this._elementsNodes.buildings.visible = config.showBuildings;
+            if (app._elementsNodes) {
+                if (app._elementsNodes.buildings) {
+                    app._elementsNodes.buildings.visible = config.showBuildings;
                 }
-                if (this._elementsNodes.roads) {
-                    this._elementsNodes.roads.visible = config.showRoads;
+                if (app._elementsNodes.roads) {
+                    app._elementsNodes.roads.visible = config.showRoads;
                 }
-                if (this._elementsNodes.water) {
-                    this._elementsNodes.water.visible = config.showWater;
+                if (app._elementsNodes.water) {
+                    app._elementsNodes.water.visible = config.showWater;
                 }
             }
 
@@ -1020,7 +1042,7 @@ let timeout: NodeJS.Timeout;
 map.on('moveend', function () {
     clearTimeout(timeout);
     timeout = setTimeout(function () {
-        app.methods.updateElements();
+        app.methods.updateElements.call(app, app);
         updateUrlState();
     }, 500);
 });
@@ -1036,7 +1058,7 @@ map.on('moving', function () {
 map.on('zoomend', function () {
     clearTimeout(timeout);
     timeout = setTimeout(function () {
-        app.methods.updateElements();
+        app.methods.updateElements.call(app, app);
     }, 500);
 });
 
@@ -1049,7 +1071,14 @@ Array.prototype.forEach.call(document.querySelectorAll('#style-list li'), (li: H
 });
 
 // 设置位置控制按钮
-setupLocationControls(map, urlOpts, app.methods.updateElements, updateUrlState, DEFAULT_LNG, DEFAULT_LAT);
+setupLocationControls(
+    map, 
+    urlOpts, 
+    () => app.methods.updateElements.call(app, app), 
+    updateUrlState, 
+    DEFAULT_LNG, 
+    DEFAULT_LAT
+);
 
 /**
  * =============================================================================

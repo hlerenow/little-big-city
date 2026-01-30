@@ -50,10 +50,10 @@ export interface UrlOpts {
     [key: string]: string | number | boolean | undefined;
 }
 
-/** 默认经度 */
-export const DEFAULT_LNG: number = -74.0130345;
-/** 默认纬度 */
-export const DEFAULT_LAT: number = 40.7063516;
+/** 默认经度 - 平潭岛（福建省） */
+export const DEFAULT_LNG: number = 119.791;
+/** 默认纬度 - 平潭岛（福建省） */
+export const DEFAULT_LAT: number = 25.503;
 
 /** 默认配置 */
 export const DEFAULT_CONFIG: Config = {
