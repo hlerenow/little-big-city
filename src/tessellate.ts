@@ -1,5 +1,15 @@
-import {Vector3} from 'claygl';
-export default function tesselate(position, indices, tolerance) {
+import { Vector3 } from 'claygl';
+
+interface TessellateResult {
+    position: Float32Array;
+    indices: Uint16Array | Uint32Array;
+}
+
+export default function tesselate(
+    position: Float32Array,
+    indices: Uint16Array | Uint32Array,
+    tolerance: number
+): TessellateResult {
     const p1 = new Vector3();
     const p2 = new Vector3();
     const p3 = new Vector3();
@@ -15,8 +25,16 @@ export default function tesselate(position, indices, tolerance) {
 
     let vtxOff = position.length / 3;
 
-    const vtxMap = {};
-    function addPoint(pt, p1, p2, p3, i1, i2, i3) {
+    const vtxMap: Record<string, number> = {};
+    function addPoint(
+        pt: Vector3,
+        p1: Vector3,
+        p2: Vector3,
+        p3: Vector3,
+        i1: number,
+        i2: number,
+        i3: number
+    ): number {
         if (pt === p1) { return i1; }
         else if (pt === p2) { return i2; }
         else if (pt === p3) { return i3; }
@@ -38,7 +56,7 @@ export default function tesselate(position, indices, tolerance) {
         return vtxOff++;
     }
 
-    function addIndices(i1, i2, i3) {
+    function addIndices(i1: number, i2: number, i3: number): void {
         appendIndices.push(i1);
         appendIndices.push(i2);
         appendIndices.push(i3);
@@ -69,8 +87,8 @@ export default function tesselate(position, indices, tolerance) {
             Vector3.scale(e1, e1, 1 / l1);
             Vector3.scale(e2, e2, 1 / l2);
 
-            let e1Points = [p2];
-            let e2Points = [p2];
+            let e1Points: Vector3[] = [p2];
+            let e2Points: Vector3[] = [p2];
             let step = l1 / Math.floor(l1 / tolerance);
             for (let d = step; d < l1; d += step) {
                 const pt = Vector3.scaleAndAdd(new Vector3(), p2, e1, d);
@@ -88,7 +106,7 @@ export default function tesselate(position, indices, tolerance) {
             const len1 = e1Points.length;
             const len2 = e2Points.length;
 
-            let lastEdgeIndices = [i2];
+            let lastEdgeIndices: number[] = [i2];
             for (let i = 1; i < Math.max(len1, len2); i++) {
                 const ii = Math.min(len1 - 1, i);
                 const ik = Math.min(len2 - 1, i);
@@ -99,7 +117,7 @@ export default function tesselate(position, indices, tolerance) {
                 const lee = Vector3.len(ee);
                 Vector3.scale(ee, ee, 1 / lee);
 
-                const edgeIndices = [];
+                const edgeIndices: number[] = [];
                 edgeIndices.push(addPoint(p11, p1, p2, p3, i1, i2, i3));
                 let step = lee / Math.floor(lee / tolerance);
                 for (let d = step; d < lee; d += step) {
@@ -136,7 +154,7 @@ export default function tesselate(position, indices, tolerance) {
         newIndices.set(indices);
         newIndices.set(appendIndices, indices.length);
 
-        return {position: newPosition, indices: newIndices};
+        return { position: newPosition, indices: newIndices };
     }
-    return {position, indices};
+    return { position, indices };
 }

@@ -1,7 +1,18 @@
-import {Vector3} from 'claygl';
-var CREDIT = '# https://github.com/pissang/little-big-city\n';
+import { Vector3 } from 'claygl';
 
-function quantizeArr(out, arr, precision) {
+const CREDIT = '# https://github.com/pissang/little-big-city\n';
+
+interface ExportOptions {
+    mtllib?: string;
+    storeVertexColorInTexture?: boolean;
+}
+
+interface ExportResult {
+    obj: string;
+    mtl: string;
+}
+
+function quantizeArr(out: number[], arr: number[], precision: number): void {
     out[0] = Math.round(arr[0] * precision) / precision;
     out[1] = Math.round(arr[1] * precision) / precision;
     if (arr.length > 2) {
@@ -9,15 +20,15 @@ function quantizeArr(out, arr, precision) {
     }
 }
 
-function phongFromRoughness(r) {
+function phongFromRoughness(r?: number): number {
     if (r == null) {
         r = 1;
     }
     return Math.pow(1000.0, 1 - r);
 }
 
-function getMaterialParameters(material) {
-    var obj = {};
+function getMaterialParameters(material: any): Record<string, any> {
+    const obj: Record<string, any> = {};
     obj['Kd'] = (material.get('color') || [1, 1, 1]).slice(0, 3).join(' ');
     // TODO
     obj['Ks'] = [1, 1, 1].join(' ');
@@ -36,11 +47,9 @@ function getMaterialParameters(material) {
 }
 
 /**
- * @param {clay.Scene} scene
- * @param {Object} [opts]
- * @param {string} [opts.mtllib='']
+ * Export ClayGL scene to OBJ format
  */
-export default function exportGL2OBJ(scene, opts) {
+export default function exportGL2OBJ(scene: any, opts?: ExportOptions): ExportResult {
     opts = opts || {};
     opts.storeVertexColorInTexture = opts.storeVertexColorInTexture || false;
     opts.mtllib = opts.mtllib || 'material';
@@ -48,10 +57,10 @@ export default function exportGL2OBJ(scene, opts) {
     let objStr = CREDIT;
     objStr += 'mtllib ' + opts.mtllib + '.mtl\n';
 
-    let materialLib = {};
-    let textureLib = {};
+    const materialLib: Record<string, any> = {};
+    const textureLib: Record<string, any> = {};
     let indexStart = 1;
-    scene.traverse(function (mesh) {
+    scene.traverse(function (mesh: any) {
         let parent = mesh;
         while (parent) {
             if (parent.invisible) {
@@ -64,11 +73,11 @@ export default function exportGL2OBJ(scene, opts) {
             let materialName = mesh.material.name;
             objStr += 'o ' + mesh.name + '\n';
 
-            materialLib[materialName] = getMaterialParameters(mesh.material, textureLib);
+            materialLib[materialName] = getMaterialParameters(mesh.material);
 
-            let vStr = [];
-            let vtStr = [];
-            let vnStr = [];
+            const vStr: string[] = [];
+            const vtStr: string[] = [];
+            const vnStr: string[] = [];
 
             let geometry = mesh.geometry;
             let positionAttr = geometry.attributes.position;
@@ -77,26 +86,26 @@ export default function exportGL2OBJ(scene, opts) {
             let texcoordAttr = geometry.attributes.texcoord0;
 
             mesh.updateWorldTransform();
-            var normalMat = mesh.worldTransform.clone().invert().transpose();
+            const normalMat = mesh.worldTransform.clone().invert().transpose();
 
-            var pos = new Vector3();
-            var nor = new Vector3();
-            var col = [];
-            var uv = [];
+            const pos = new Vector3();
+            const nor = new Vector3();
+            const col: number[] = [];
+            const uv: number[] = [];
 
-            var hasTexcoord = !!(texcoordAttr && texcoordAttr.value);
-            var hasNormal = !!(normalAttr && normalAttr.value);
-            var hasColor = !!(colorAttr && colorAttr.value);
+            const hasTexcoord = !!(texcoordAttr && texcoordAttr.value);
+            const hasNormal = !!(normalAttr && normalAttr.value);
+            const hasColor = !!(colorAttr && colorAttr.value);
 
-            var tmp = [];
-            for (var i = 0; i < geometry.vertexCount; i++) {
+            const tmp: number[] = [];
+            for (let i = 0; i < geometry.vertexCount; i++) {
                 positionAttr.get(i, pos.array);
 
                 Vector3.transformMat4(pos, pos, mesh.worldTransform);
 
                 // PENDING
-                quantizeArr(tmp, pos.array, 1e5);
-                var vItem = 'v ' + tmp.join(' ');
+                quantizeArr(tmp, pos.array as number[], 1e5);
+                let vItem = 'v ' + tmp.join(' ');
                 if (hasColor && !opts.storeVertexColorInTexture) {
                     colorAttr.get(i, col);
                     quantizeArr(col, col, 1e3);
@@ -108,7 +117,7 @@ export default function exportGL2OBJ(scene, opts) {
                     normalAttr.get(i, nor.array);
                     Vector3.transformMat4(nor, nor, normalMat);
                     Vector3.normalize(nor, nor);
-                    quantizeArr(tmp, nor.array, 1e3);
+                    quantizeArr(tmp, nor.array as number[], 1e3);
                     vnStr.push('vn ' + tmp.join(' '));
                 }
                 else {
@@ -124,12 +133,12 @@ export default function exportGL2OBJ(scene, opts) {
                 }
             }
 
-            var fStr = [];
-            var indices = [];
-            for (var i = 0; i < geometry.triangleCount; i++) {
+            const fStr: string[] = [];
+            const indices: any[] = [];
+            for (let i = 0; i < geometry.triangleCount; i++) {
                 geometry.getTriangleIndices(i, indices);
                 // Start from 1
-                for (var k = 0; k < 3; k++) {
+                for (let k = 0; k < 3; k++) {
                     indices[k] += indexStart;
                     var idx = indices[k];
                     // if (hasTexcoord) {
@@ -156,14 +165,14 @@ export default function exportGL2OBJ(scene, opts) {
         }
     });
 
-    var mtlStr = [
+    const mtlStr: string[] = [
         CREDIT
     ];
-    for (var matName in materialLib) {
-        var material = materialLib[matName];
+    for (const matName in materialLib) {
+        const material = materialLib[matName];
         mtlStr.push('newmtl ' + matName);
-        for (var key in material) {
-            var val = material[key];
+        for (const key in material) {
+            const val = material[key];
             mtlStr.push(key + ' ' + val);
         }
     }

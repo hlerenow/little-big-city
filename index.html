@@ -5,14 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>Little Big City</title>
-    <link rel="stylesheet" href="./css/main.css">
     <script>
         paceOptions = {
             ajax: true,
             document: true
         };
     </script>
-    <script src="lib/pace.min.js"></script>
+    <script src="/lib/pace.min.js"></script>
 </head>
 <body>
     <div id="viewport"></div>
@@ -31,10 +30,10 @@
     <nav id="style-list">
         <ul>
             <li class="planet">
-                <img src="asset/planet.jpg" alt="">
+                <img src="/assets/planet.jpg" alt="">
             </li>
             <li class="tile">
-                <img src="asset/isometric.jpg" alt="">
+                <img src="/assets/isometric.jpg" alt="">
             </li>
         </ul>
     </nav>
@@ -47,7 +46,7 @@
             Vector tile data is from <a target="_blank" href="https://developers.nextzen.org/about.html">nextzen</a>.
         </div>
     </div>
-    <script src="lib/FileSaver.js"></script>
-    <script src="./dist/bundle.js"></script>
+    <script src="/lib/FileSaver.js"></script>
+    <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

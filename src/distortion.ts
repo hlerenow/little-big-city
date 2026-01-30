@@ -1,12 +1,26 @@
+interface BoundingRect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
 
-function normalize(v) {
+type Face = 'pz' | 'px' | 'nz' | 'py' | 'nx' | 'ny' | string;
+
+function normalize(v: number[]): void {
     const l = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
     v[0] /= l;
     v[1] /= l;
     v[2] /= l;
 }
 
-export default function distortion(position, boundingRect, size, curveness, face) {
+export default function distortion(
+    position: Float32Array | number[],
+    boundingRect: BoundingRect,
+    size: number,
+    curveness: number,
+    face: Face
+): Float32Array | number[] {
     const vec = [];
     const fullRadius = size / Math.sqrt(2);
     const radius = fullRadius / curveness;

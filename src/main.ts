@@ -1,18 +1,18 @@
 /* global mapboxgl */
-import {extrudeGeoJSON, extrudePolygon} from 'geometry-extrude';
+import './styles/main.css';
+import { extrudeGeoJSON, extrudePolygon } from 'geometry-extrude';
 import {
     application,
     plugin,
     geometry as builtinGeometries,
-    Texture2D,
     Geometry,
     Vector3
 } from 'claygl';
-import {VectorTile} from '@mapbox/vector-tile';
+import { VectorTile } from '@mapbox/vector-tile';
 import Protobuf from 'pbf';
 import * as dat from 'dat.gui';
 import ClayAdvancedRenderer from 'claygl-advanced-renderer';
-import LRU from 'lru-cache';
+import { LRUCache } from 'lru-cache';
 import quickhull from 'quickhull3d';
 import toOBJ from './toOBJ';
 import JSZip from 'jszip';
@@ -20,15 +20,49 @@ import tessellate from './tessellate';
 import vec2 from 'claygl/src/glmatrix/vec2';
 import PolyBool from 'polybooljs';
 import distortion from './distortion';
+import * as maptalks from 'maptalks';
 
-const mvtCache = LRU(50);
+// Declare global saveAs function from FileSaver.js
+declare const saveAs: (data: Blob, filename: string) => void;
 
-const maptalks = require('maptalks');
+interface Config {
+    radius: number;
+    curveness: number;
+    showEarth: boolean;
+    earthDepth: number;
+    earthColor: string;
+    showBuildings: boolean;
+    buildingsColor: string;
+    showRoads: boolean;
+    roadsColor: string;
+    showWater: boolean;
+    waterColor: string;
+    showCloud: boolean;
+    cloudColor: string;
+    rotateSpeed: number;
+    sky: boolean;
+}
 
-const DEFAULT_LNG = -74.0130345;
-const DEFAULT_LAT = 40.7063516;
+interface UrlOpts {
+    lng?: number;
+    lat?: number;
+    style?: string;
+    config?: string;
+    [key: string]: string | number | boolean | undefined;
+}
 
-const DEFAULT_CONFIG = {
+interface VectorElementConfig {
+    type: string;
+    geometryType: string;
+    depth: number | ((feature: any) => number);
+}
+
+const mvtCache = new LRUCache<string, any>({ max: 50 });
+
+const DEFAULT_LNG: number = -74.0130345;
+const DEFAULT_LAT: number = 40.7063516;
+
+const DEFAULT_CONFIG: Config = {
     radius: 60,
     curveness: 1,
 
@@ -54,38 +88,40 @@ const DEFAULT_CONFIG = {
 
 const searchStr = location.search.slice(1);
 const searchItems = searchStr.split('&');
-const urlOpts = {};
-searchItems.forEach(item => {
+const urlOpts: UrlOpts = {};
+searchItems.forEach((item: string) => {
     const arr = item.split('=');
     const key = arr[0];
-    const val = arr[1] || true;
-    urlOpts[key] = val;
+    const val: string | boolean = arr[1] || true;
+    if (key) {
+        (urlOpts as any)[key] = val;
+    }
 });
-urlOpts.lng = urlOpts.lng || DEFAULT_LNG;
-urlOpts.lat = urlOpts.lat || DEFAULT_LAT;
+urlOpts.lng = Number(urlOpts.lng) || DEFAULT_LNG;
+urlOpts.lat = Number(urlOpts.lat) || DEFAULT_LAT;
 
-function makeUrl() {
-    const diffConfig = {};
+function makeUrl(): string {
+    const diffConfig: any = {};
     for (let key in config) {
-        if (config[key] !== DEFAULT_CONFIG[key]) {
-            diffConfig[key] = config[key];
+        if ((config as any)[key] !== (DEFAULT_CONFIG as any)[key]) {
+            diffConfig[key] = (config as any)[key];
         }
     }
     urlOpts.config = encodeURIComponent(JSON.stringify(diffConfig));
 
-    const urlItems = [];
+    const urlItems: string[] = [];
     for (let key in urlOpts) {
         urlItems.push(key + '=' + urlOpts[key]);
     }
     return './?' + urlItems.join('&');
 }
 
-const IS_TILE_STYLE = urlOpts.style === 'tile';
+const IS_TILE_STYLE: boolean = urlOpts.style === 'tile';
 
 // const TILE_SIZE = IS_TILE_STYLE ? 512 : 256;
-const TILE_SIZE = 256;
+const TILE_SIZE: number = 256;
 
-const config = Object.assign({}, DEFAULT_CONFIG);
+const config: Config = Object.assign({}, DEFAULT_CONFIG);
 try {
     Object.assign(config, JSON.parse(decodeURIComponent(urlOpts.config || '{}')));
 }
@@ -105,10 +141,10 @@ const actions = {
             zip.file('city.obj', obj);
             zip.file('city.mtl', mtl);
             zip.generateAsync({type: 'blob', compression: 'DEFLATE' })
-                .then(content => {
+                .then((content: Blob) => {
                     downloading = false;
                     saveAs(content, 'city.zip');
-                }).catch(e => {
+                }).catch((e: any) => {
                     downloading = false;
                     console.error(e.toString());
                 });
@@ -122,18 +158,18 @@ const actions = {
     reset: () => {
         Object.assign(config, DEFAULT_CONFIG);
         ui.updateDisplay();
-        window.location = makeUrl();
+        (window.location as any) = makeUrl();
     }
 };
 
-const mvtUrlTpl = `https://tile.nextzen.org/tilezen/vector/v1/${TILE_SIZE}/all/{z}/{x}/{y}.mvt?api_key=EWFsMD1DSEysLDWd2hj2cw`;
+const mvtUrlTpl: string = `https://tile.nextzen.org/tilezen/vector/v1/${TILE_SIZE}/all/{z}/{x}/{y}.mvt?api_key=EWFsMD1DSEysLDWd2hj2cw`;
 
-const mainLayer = new maptalks.TileLayer('base', {
+const mainLayer: any = new maptalks.TileLayer('base', {
     tileSize: [TILE_SIZE, TILE_SIZE],
     urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     subdomains: ['a', 'b', 'c']
 });
-const map = new maptalks.Map('map-main', {
+const map: any = new maptalks.Map('map-main', {
     // center: [-0.113049, 51.498568],
     // center: [-73.97332, 40.76462],
     center: [urlOpts.lng, urlOpts.lat],
@@ -143,15 +179,15 @@ const map = new maptalks.Map('map-main', {
 map.setMinZoom(16);
 map.setMaxZoom(16);
 
-const faces = [
+const faces: string[] = [
     'pz', 'px', 'nz',
     'py', 'nx', 'ny'
 ];
 
-const vectorElements = [{
+const vectorElements: VectorElementConfig[] = [{
     type: 'buildings',
     geometryType: 'polygon',
-    depth: feature => {
+    depth: (feature: any) => {
         return (feature.properties.height || 30) / 10 + 1;
     }
 }, {
@@ -164,7 +200,7 @@ const vectorElements = [{
     depth: 1
 }];
 
-function iterateFeatureCoordinates(feature, cb) {
+function iterateFeatureCoordinates(feature: any, cb: (coords: any) => any): void {
     const geometry = feature.geometry;
     if (geometry.type === 'MultiPolygon') {
         for (let i = 0; i < geometry.coordinates.length; i++) {
@@ -183,11 +219,11 @@ function iterateFeatureCoordinates(feature, cb) {
     }
 }
 
-function subdivideLongEdges(features, maxDist) {
+function subdivideLongEdges(features: any[], maxDist: number): void {
 
-    const v = [];
-    function addPoints(points) {
-        const newPoints = [];
+    const v: any[] = [];
+    function addPoints(points: any[]): any[] {
+        const newPoints: any[] = [];
         for (let i = 0; i < points.length - 1; i++) {
             vec2.sub(v, points[i + 1], points[i]);
             const dist = vec2.len(v);
@@ -201,13 +237,13 @@ function subdivideLongEdges(features, maxDist) {
         return newPoints;
     }
 
-    features.forEach(feature => {
+    features.forEach((feature: any) => {
         iterateFeatureCoordinates(feature, addPoints);
     });
 }
 
-function scaleFeature(feature, offset, scale) {
-    function scalePoints(pts) {
+function scaleFeature(feature: any, offset: number[], scale: number[]): void {
+    function scalePoints(pts: any[]): any[] {
         for (let i = 0; i < pts.length; i++) {
             pts[i][0] = (pts[i][0] + offset[0]) * scale[0];
             pts[i][1] = (pts[i][1] + offset[1]) * scale[1];
@@ -217,9 +253,9 @@ function scaleFeature(feature, offset, scale) {
     iterateFeatureCoordinates(feature, scalePoints);
 }
 
-function unionComplexPolygons(features) {
-    const mergedCoordinates = [];
-    features.forEach(feature => {
+function unionComplexPolygons(features: any[]): any {
+    const mergedCoordinates: any[] = [];
+    features.forEach((feature: any) => {
         const geometry = feature.geometry;
         if (geometry.type === 'Polygon') {
             mergedCoordinates.push(feature.geometry.coordinates);
@@ -241,9 +277,9 @@ function unionComplexPolygons(features) {
     };
 }
 
-function cullBuildingPolygns(features) {
+function cullBuildingPolygns(features: any[]): void {
     const earthCoords = [getRectCoords(earthRect)];
-    features.forEach(feature => {
+    features.forEach((feature: any) => {
         if (feature.geometry && (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon')) {
             const poly = PolyBool.polygonFromGeoJSON(feature.geometry);
             const intersectedPoly = PolyBool.intersect(
@@ -258,7 +294,14 @@ function cullBuildingPolygns(features) {
     });
 }
 
-function unionRect(out, a, b) {
+interface Rect {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+function unionRect(out: Rect, a: Rect, b: Rect): void {
     const x = Math.min(a.x, b.x);
     const y = Math.min(a.y, b.y);
     out.x = x;
@@ -267,16 +310,16 @@ function unionRect(out, a, b) {
     out.height = Math.max(a.height + a.y, b.height + b.y) - y;
 }
 
-const width = 55;
-const height = 58.5;
-const earthRect = {
+const width: number = 55;
+const height: number = 58.5;
+const earthRect: Rect = {
     x: -width / 2,
     y: -height / 2,
     width: width,
     height: height
 };
 
-function getRectCoords(rect) {
+function getRectCoords(rect: Rect): number[][] {
     return [
         [rect.x, rect.y],
         [rect.x + rect.width, rect.y],
@@ -286,13 +329,13 @@ function getRectCoords(rect) {
     ];
 }
 
-const app = application.create('#viewport', {
+const app: any = application.create('#viewport', {
 
     autoRender: false,
 
     devicePixelRatio: 1,
 
-    init(app) {
+    init(app: any) {
 
         this._advRenderer = new ClayAdvancedRenderer(app.renderer, app.scene, app.timeline, {
             shadow: true,
@@ -338,7 +381,7 @@ const app = application.create('#viewport', {
         this._elementsNodes = {};
         this._elementsMaterials = {};
 
-        this._diffuseTex = app.loadTextureSync('./asset/paper-detail.png', {
+        this._diffuseTex = app.loadTextureSync('/assets/paper-detail.png', {
             anisotropic: 8
         });
 
@@ -389,7 +432,7 @@ const app = application.create('#viewport', {
         this._advRenderer.render();
 
 
-        return app.createAmbientCubemapLight('./asset/Grand_Canyon_C.hdr', 0.2, 0.8, 1).then(result => {
+        return app.createAmbientCubemapLight('/assets/Grand_Canyon_C.hdr', 0.2, 0.8, 1).then(result => {
             const skybox = new plugin.Skybox({
                 environmentMap: result.specular.cubemap,
                 scene: app.scene
@@ -398,6 +441,11 @@ const app = application.create('#viewport', {
             this._skybox = skybox;
             this._advRenderer.render();
         });
+    },
+
+    loop(app: any) {
+        // Loop method required by claygl 1.3.0+
+        // Rendering is handled by advRenderer on demand
     },
 
     methods: {
@@ -512,12 +560,12 @@ const app = application.create('#viewport', {
                     if (!IS_TILE_STYLE) {
                         positionAnimateTo = distortion(
                             poly.position, boundingRect, config.radius, config.curveness, faces[idx]
-                        );
+                        ) as Float32Array;
                         positionAnimateFrom = distortion(
                             positionAnimateFrom, boundingRect, config.radius, config.curveness, faces[idx]
-                        );
+                        ) as Float32Array;
                     }
-                    geo.attributes.position.value = positionAnimateTo;
+                    geo.attributes.position.value = positionAnimateTo as any;
                     geo.generateVertexNormals();
                     geo.updateBoundingBox();
 
@@ -646,19 +694,19 @@ const app = application.create('#viewport', {
                                 features[type].push(feature);
                             }
 
-                            if (IS_TILE_STYLE) {
-                                cullBuildingPolygns(features[type]);
-                            }
+            if (IS_TILE_STYLE && features[type]) {
+                cullBuildingPolygns(features[type]);
+            }
                         });
 
-                        if (features.water) {
-                            features.water = [unionComplexPolygons(features.water.filter(feature => {
+                        if ((features as any).water) {
+                            (features as any).water = [unionComplexPolygons((features as any).water.filter((feature: any) => {
                                 const geoType = feature.geometry && feature.geometry.type;
                                 return geoType === 'Polygon' || geoType === 'MultiPolygon';
                             }))];
                         }
-                        if (features.roads) {
-                            features.roads = features.roads.filter(feature => {
+                        if ((features as any).roads) {
+                            (features as any).roads = (features as any).roads.filter((feature: any) => {
                                 const geoType = feature.geometry && feature.geometry.type;
                                 return geoType === 'LineString' || geoType === 'MultiLineString';
                             });
@@ -837,8 +885,8 @@ map.on('moveend', function () {
 });
 map.on('moving', function () {
     const center = map.getCenter();
-    urlOpts.lng = document.querySelector('#lng').value = center.x;
-    urlOpts.lat = document.querySelector('#lat').value = center.y;
+    urlOpts.lng = (document.querySelector('#lng') as HTMLInputElement)!.value = center.x;
+    urlOpts.lat = (document.querySelector('#lat') as HTMLInputElement)!.value = center.y;
 });
 map.on('zoomend', function () {
     clearTimeout(timeout);
@@ -847,24 +895,24 @@ map.on('zoomend', function () {
     }, 500);
 });
 
-Array.prototype.forEach.call(document.querySelectorAll('#style-list li'), li => {
+Array.prototype.forEach.call(document.querySelectorAll('#style-list li'), (li: HTMLElement) => {
     li.addEventListener('click', () => {
         urlOpts.style = li.className;
-        window.location = makeUrl();
+        (window.location as any) = makeUrl();
     });
 });
 
-document.querySelector('#locate').addEventListener('click', () => {
-    urlOpts.lng = +document.querySelector('#lng').value;
-    urlOpts.lat = +document.querySelector('#lat').value;
+document.querySelector('#locate')!.addEventListener('click', () => {
+    urlOpts.lng = +(document.querySelector('#lng') as HTMLInputElement)!.value;
+    urlOpts.lat = +(document.querySelector('#lat') as HTMLInputElement)!.value;
     map.setCenter({x: urlOpts.lng, y: urlOpts.lat});
     app.methods.updateElements();
     updateUrlState();
 });
 
-document.querySelector('#reset').addEventListener('click', () => {
-    urlOpts.lng = document.querySelector('#lng').value = DEFAULT_LNG;
-    urlOpts.lat = document.querySelector('#lat').value = DEFAULT_LAT;
+document.querySelector('#reset')!.addEventListener('click', () => {
+    urlOpts.lng = (document.querySelector('#lng') as HTMLInputElement)!.value = DEFAULT_LNG as any;
+    urlOpts.lat = (document.querySelector('#lat') as HTMLInputElement)!.value = DEFAULT_LAT as any;
     map.setCenter({x: urlOpts.lng, y: urlOpts.lat});
     app.methods.updateElements();
     updateUrlState();
