@@ -84,6 +84,8 @@ declare module 'claygl/src/glmatrix/vec2' {
 }
 
 // Additional claygl type extensions
+// NOTE: tessellate.ts has been migrated to Three.js and no longer uses claygl Vector3
+// These types are kept for potential legacy code compatibility
 declare module 'claygl' {
     export const application: any;
     export const plugin: any;

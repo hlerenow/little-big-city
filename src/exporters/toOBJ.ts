@@ -1,5 +1,17 @@
+/**
+ * OBJ模型导出器
+ * 
+ * 功能说明：
+ * - 将Three.js场景导出为OBJ格式
+ * - 同时生成MTL材质文件
+ * - 保留网格的几何和材质信息
+ * 
+ * @module exporters/toOBJ
+ */
+
 import * as THREE from 'three';
 
+/** OBJ文件头部注释 */
 const CREDIT = '# https://github.com/pissang/little-big-city\n';
 
 interface ExportOptions {

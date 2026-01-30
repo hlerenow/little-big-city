@@ -1,25 +1,51 @@
 /**
- * Three.js Application - Replaces claygl application
+ * Three.js应用核心模块
+ * 
+ * 功能说明：
+ * - 封装Three.js场景、渲染器、相机等核心对象
+ * - 提供统一的API用于创建网格、材质、灯光等
+ * - 处理窗口大小变化和渲染循环
+ * - 兼容原有的claygl API接口
+ * 
+ * @module core/ThreeApp
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
 
+/**
+ * Three.js应用配置接口
+ */
 export interface ThreeAppConfig {
+  /** 容器元素（CSS选择器或DOM元素） */
   container: string | HTMLElement;
+  /** 设备像素比（用于高清屏幕） */
   devicePixelRatio?: number;
+  /** 是否自动渲染 */
   autoRender?: boolean;
 }
 
+/**
+ * Three.js应用类
+ * 封装Three.js的核心功能，提供简化的API接口
+ */
 export class ThreeApp {
+  /** Three.js场景 */
   public scene: THREE.Scene;
+  /** 相机（透视或正交） */
   public camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
+  /** WebGL渲染器 */
   public renderer: THREE.WebGLRenderer;
+  /** 容器DOM元素 */
   public container: HTMLElement;
+  /** 轨道控制器 */
   public controls?: OrbitControls;
+  /** 时钟（用于动画） */
   public clock: THREE.Clock;
 
+  /** 动画帧ID */
   private animationId?: number;
+  /** 渲染回调函数 */
   private renderCallback?: () => void;
 
   constructor(config: ThreeAppConfig) {

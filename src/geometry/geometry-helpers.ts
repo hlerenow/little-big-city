@@ -1,5 +1,12 @@
 /**
- * Three.js Geometry Helpers - Replaces claygl geometry functions
+ * Three.js几何体辅助工具
+ * 
+ * 功能说明：
+ * - 提供几何体创建和操作的辅助函数
+ * - 兼容原claygl的几何体API
+ * - 简化常用几何体操作
+ * 
+ * @module geometry/geometry-helpers
  */
 import * as THREE from 'three';
 
